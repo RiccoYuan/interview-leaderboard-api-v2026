@@ -101,7 +101,7 @@ public sealed class RedBlackTreeSortedRankIndex : ISortedRankIndex
     private static Node? Put(Node? h, in RankKey key)
     {
         if (h is null)
-            return new Node(key, Red, 1);
+            return new Node(key, Red);
 
         var cmp = RankKey.Compare(in key, h.Key);
         if (cmp < 0)
@@ -228,8 +228,10 @@ public sealed class RedBlackTreeSortedRankIndex : ISortedRankIndex
     private static void FlipColors(Node h)
     {
         h.IsRed = !h.IsRed;
-        h.Left!.IsRed = !h.Left.IsRed;
-        h.Right!.IsRed = !h.Right.IsRed;
+        if (h.Left is not null)
+            h.Left.IsRed = !h.Left.IsRed;
+        if (h.Right is not null)
+            h.Right.IsRed = !h.Right.IsRed;
     }
 
     private static Node MoveRedLeft(Node h)
@@ -279,13 +281,13 @@ public sealed class RedBlackTreeSortedRankIndex : ISortedRankIndex
     private static void UpdateSize(Node node) =>
         node.Size = GetSize(node.Left) + GetSize(node.Right) + 1;
 
-    private sealed class Node(RankKey key, bool isRed, int size)
+    private sealed class Node(RankKey key, bool isRed)
     {
         public RankKey Key { get; set; } = key;
 
         public bool IsRed { get; set; } = isRed;
 
-        public int Size { get; set; } = size;
+        public int Size { get; set; } = 1;
 
         public Node? Left { get; set; }
 
