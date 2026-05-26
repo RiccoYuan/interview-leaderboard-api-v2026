@@ -1,0 +1,7 @@
+_pdf_extract.txt
+**/bin/
+**/obj/
+BenchmarkDotNet.Artifacts/
+load-reports/
+*.user
+.vs/
