@@ -50,7 +50,7 @@
 | **统一接口 `ISortedRankIndex`** | 三种索引可替换，避免 API 依赖具体数据结构 |
 | **同一套测试覆盖三种实现** | 防止每个实现各测各的，降低验证偏差 |
 | **服务层集中读写锁** | 一处维护并发语义，避免锁策略散落在数据结构中 |
-| **BenchmarkDotNet + NBomber** | 同时覆盖进程内数据结构性能与真实 HTTP 混合负载 |
+| **BenchmarkDotNet** | 覆盖进程内数据结构性能对比 |
 | **GitHub Actions 自动化验证** | 作为补充配置，在提交或 PR 时运行 test、benchmark smoke、load smoke |
 
 正确性覆盖包括 PDF 样例、同分排序、降分、掉榜、邻域语义、随机对照测试、并发 fuzz 和 API 集成测试。我的工程底线是：**代码可扩展、实现可替换、正确性可验证、性能可度量、交付可复现**。
@@ -61,8 +61,8 @@
 
 | 方向 | 实现 |
 |------|------|
-| **量化结果** | [`docs/performance-results.md`](docs/performance-results.md) — BenchmarkDotNet Short + NBomber 实测摘要 |
-| **自动化验证** | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — `dotnet test`、Dry benchmark、NBomber 5 s smoke |
+| **量化结果** | [`docs/performance-results.md`](docs/performance-results.md) — BenchmarkDotNet 实测摘要 |
+| **自动化验证** | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — `dotnet test`、Dry benchmark |
 | **API 集成测试** | [`tests/Leaderboard.Tests/ApiIntegrationTests.cs`](tests/Leaderboard.Tests/ApiIntegrationTests.cs) — `WebApplicationFactory` 覆盖三个 HTTP 端点 |
 | **OpenAPI / Swagger** | 开发环境：`/swagger`（Swashbuckle） |
 | **一键脚本** | [`build.ps1`](build.ps1)、[`Makefile`](Makefile) — `restore → build → test → benchmark` |
@@ -79,7 +79,6 @@
 
 > 数据为 3 轮独立 Short job 均值（同一 job 覆盖三个场景）。原始 benchmark 存在两个 bug——返回值未消费导致 JIT 消除 Neighborhood 调用、被查询 id 的 score ≤ 0 命中快速返回路径——已一并修复；详见 `docs/performance-results.md`。
 
-HTTP 混合压测（100 req/s 目标、30 s）：成功请求 **~86 RPS**，OK 延迟 **p50 ≈ 0.5 ms**、**p99 ≈ 28 ms**；邻域请求对部分未上榜 id 返回 404 属预期。
 
 ```bash
 # 克隆后一条命令（PowerShell）
