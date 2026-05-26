@@ -20,4 +20,4 @@ ci: test benchmark
 
 clean:
 	dotnet clean
-	rm -rf BenchmarkDotNet.Artifacts load-reports
+	rm -rf BenchmarkDotNet.Artifacts

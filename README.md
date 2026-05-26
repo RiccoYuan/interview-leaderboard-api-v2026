@@ -1,8 +1,6 @@
 # 内存排行榜（.NET）
 
-> **AI 使用说明（透明披露）**  
-> 本项目**全部源代码均由 AI 生成**。底层代码实现与算法细节由AI Agent辅助完成；我负责需求拆解、方案论证、架构设计、技术取舍、测试验证与最终质量把控。  
-> 我没有把 AI 输出直接当成结论，而是围绕题目约束持续追问：为什么不能运行时排序、如何支持按 rank 查询、复杂度是否满足、并发边界应放在哪里。最终方案由我判断、取舍并验收。
+> **AI 使用说明**：本项目全部源代码由 AI 生成，我负责需求拆解、方案论证、架构设计、技术取舍与质量验收。
 
 ---
 
@@ -17,15 +15,15 @@
 
 三种可互换的有序索引实现共用同一套 API 与测试：
 
-| 索引 | 思路 |
-|------|------|
-| **跳表**（默认） | 带 **span** 的可索引跳表，按名次跳转；思路参考 Redis 有序集合 |
-| **B+ 树** | 叶节点双向链表 + 内部节点分隔键 + **子树计数**，支持按名次定位与区间扫描 |
-| **红黑树** | **左倾红黑 BST** + 每节点 **子树大小**（order-statistic tree）；插入/删除参考 Algs4 `RedBlackBST` |
+| 索引 | 思路 | 优势场景 |
+|------|------|----------|
+| **跳表**（默认） | 带 **span** 的可索引跳表，按名次跳转；思路参考 Redis 有序集合 | 单次更新最快，最均衡（默认实现） |
+| **B+ 树** | 叶节点双向链表 + 内部节点分隔键 + **子树计数** | Range 查询最快 |
+| **红黑树** | **左倾红黑 BST** + 每节点 **子树大小**（order-statistic tree） | 邻域查询最快 |
 
 并发：`LeaderboardService` 维护 `Dictionary<long, decimal>` 与 `ISortedRankIndex`，由 **`ReaderWriterLockSlim`** 保护（读并发、写互斥）。
 
-**最终选型结论**：综合复杂度、Benchmark 结果、工业实践和实现成本，本题默认选择**带 span 的跳表**。B+ 树和红黑树用于对比验证；在当前 take-home 场景下，它们证明了方案空间，但不作为默认推荐实现。
+**选型结论**：三轮实测显示三种结构各有一个领先场景，无全面领先者。跳表从未最慢、始终在最优者 35% 以内，结合 Redis 工业实践，作为默认实现。详见 [`docs/performance-results.md`](docs/performance-results.md)。
 
 ---
 
@@ -59,7 +57,7 @@
 
 ---
 
-## 工程化补充（已实现）
+## 工程化补充
 
 | 方向 | 实现 |
 |------|------|
@@ -69,19 +67,17 @@
 | **OpenAPI / Swagger** | 开发环境：`/swagger`（Swashbuckle） |
 | **一键脚本** | [`build.ps1`](build.ps1)、[`Makefile`](Makefile) — `restore → build → test → benchmark` |
 
-仍可继续加强的方向：**可观测性**（`/health`、Prometheus）、**持久化扩展点**文档、**NBomber 包版本对齐**。
+仍可继续加强的方向：**可观测性**（`/health`、Prometheus）、**持久化扩展点**文档。
 
-### 性能结论（摘要）
+### 性能结论（测试环境：约 1 万名种子用户，5 千上榜，Ryzen 7 5700G / .NET 10）
 
-综合性能：跳表在更新与邻域查询组合场景最优，符合 Redis 工业级实践，因此作为默认实现。
+| 场景 | 跳表 | B+ 树 | 红黑树 | 分场景最优 |
+|------|------|-------|--------|------------|
+| Top-50 名次区间 | ~496 ns | **~458 ns** | ~663 ns | **B+ 树** |
+| 单次增量更新 | **~225 ns** | ~263 ns | ~362 ns | **跳表** |
+| 邻域查询（high=2, low=3） | ~173 ns | ~235 ns | **~151 ns** | **红黑树** |
 
-在约 **1 万名种子用户**（其中约 **5 千** score > 0 上榜）、本机 Ryzen 7 5700G / .NET 10 上（详见 [`docs/performance-results.md`](docs/performance-results.md)）：
-
-| 场景 | 跳表 | B+ 树 | 红黑树 |
-|------|------|-------|--------|
-| Top-50 名次区间 | ~577 ns | ~521 ns | ~738 ns |
-| 单次增量更新 | ~239 ns | ~270 ns | ~351 ns |
-| 邻域查询 | ~788 µs | ~811 µs | ~970 µs |
+> 数据为 3 轮独立 Short job 均值（同一 job 覆盖三个场景）。原始 benchmark 存在两个 bug——返回值未消费导致 JIT 消除 Neighborhood 调用、被查询 id 的 score ≤ 0 命中快速返回路径——已一并修复；详见 `docs/performance-results.md`。
 
 HTTP 混合压测（100 req/s 目标、30 s）：成功请求 **~86 RPS**，OK 延迟 **p50 ≈ 0.5 ms**、**p99 ≈ 28 ms**；邻域请求对部分未上榜 id 返回 404 属预期。
 
@@ -95,19 +91,6 @@ make all
 
 ---
 
-## 三种索引如何选型
-
-本题需要的是**顺序统计（order statistics）**：快速回答「第 k 名是谁」「某用户前后是谁」。普通有序树只保证 key 有序，不天然支持按名次 O(log n) 跳转，因此必须增加 span、子树计数或子树大小。
-
-| 维度 | 跳表 | B+ 树 | 红黑树 |
-|------|------|-------|--------|
-| 平衡 | 概率 | 确定性多路 | 确定性二叉 |
-| 按 rank / 区间 | span | 子树计数 + 叶链 | 子树大小 + 中序剪枝 |
-| 典型场景叙事 | Redis / 实时榜 | 存储引擎叶索引 | 通用有序结构 + rank 增强 |
-| 本项目角色 | **默认实现**：工程直观、更新和邻域表现最好 | 对比实现：Top-50 略快，适合验证叶链扫描优势 | 对比实现：确定性平衡树，验证 order-statistic BST 路线 |
-
----
-
 ## 仓库结构
 
 ```
@@ -118,7 +101,6 @@ src/
 tests/
   Leaderboard.Tests/        # xUnit — Core 正确性、并发 fuzz、API 集成测试
   Leaderboard.Benchmarks/   # BenchmarkDotNet — 跳表 vs B+ 树 vs 红黑树
-  Leaderboard.LoadTests/    # NBomber HTTP 压测（详见项目内 README）
 docs/
   performance-results.md   # 基准与压测量化数据
 .github/workflows/
@@ -130,7 +112,6 @@ docs/
 ## 环境要求
 
 - [.NET SDK](https://dotnet.microsoft.com/download) **10.0**（见根目录 `global.json`，已启用 `rollForward: latestFeature`）。
-- HTTP 压测需**先启动 API**（NBomber 对 live endpoint 发请求）。
 
 ---
 
@@ -216,24 +197,8 @@ dotnet run -c Release --project tests/Leaderboard.Benchmarks -- --job Dry --filt
 
 1. `dotnet test`（含 API 集成测试）
 2. BenchmarkDotNet **Dry** 冒烟（`*IndexComparison*`）
-3. 启动 API 后运行 **5 s** NBomber（20 req/s）
 
 这部分不是本项目的核心展示点，主要用于补充项目完整性。工作流定义： [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
-
----
-
-## HTTP 负载测试（NBomber）
-
-1. 启动 API（见上文）。
-2. 在仓库根目录：
-
-```bash
-dotnet run --project tests/Leaderboard.LoadTests
-```
-
-可选参数：`baseUrl`、`injectPerSec`、`durationSeconds`；或环境变量 `LEADERBOARD_URL`。  
-更多说明见 [`tests/Leaderboard.LoadTests/README.md`](tests/Leaderboard.LoadTests/README.md)。  
-报告输出在 `load-reports/`（已 gitignore）。
 
 ---
 

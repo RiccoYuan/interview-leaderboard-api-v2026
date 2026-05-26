@@ -11,6 +11,9 @@ public class IndexComparisonBenchmarks
     private LeaderboardService _bPlusTree = null!;
     private LeaderboardService _redBlackTree = null!;
 
+    // Volatile sink: prevents JIT dead-code elimination of return values.
+    private volatile int _sink;
+
     [GlobalSetup]
     public void Setup()
     {
@@ -29,40 +32,49 @@ public class IndexComparisonBenchmarks
     }
 
     [Benchmark(Baseline = true)]
-    public void SkipList_RangeTop50() =>
+    public IReadOnlyList<RankedCustomer> SkipList_RangeTop50() =>
         _skipList.GetByRankRangeAsync(1, 50).GetAwaiter().GetResult();
 
     [Benchmark]
-    public void BPlusTree_RangeTop50() =>
+    public IReadOnlyList<RankedCustomer> BPlusTree_RangeTop50() =>
         _bPlusTree.GetByRankRangeAsync(1, 50).GetAwaiter().GetResult();
 
     [Benchmark]
-    public void SkipList_UpdateSingle() =>
+    public decimal SkipList_UpdateSingle() =>
         _skipList.UpdateScoreAsync(1_000_001, 1m).GetAwaiter().GetResult();
 
     [Benchmark]
-    public void BPlusTree_UpdateSingle() =>
+    public decimal BPlusTree_UpdateSingle() =>
         _bPlusTree.UpdateScoreAsync(1_000_001, 1m).GetAwaiter().GetResult();
 
     [Benchmark]
-    public void SkipList_Neighborhood() =>
-        _skipList.GetNeighborhoodAsync(1_000_500, 2, 3).GetAwaiter().GetResult();
+    public void SkipList_Neighborhood()
+    {
+        var r = _skipList.GetNeighborhoodAsync(1_001_500, 2, 3).GetAwaiter().GetResult();
+        _sink = r?.Count ?? -1;
+    }
 
     [Benchmark]
-    public void BPlusTree_Neighborhood() =>
-        _bPlusTree.GetNeighborhoodAsync(1_000_500, 2, 3).GetAwaiter().GetResult();
+    public void BPlusTree_Neighborhood()
+    {
+        var r = _bPlusTree.GetNeighborhoodAsync(1_001_500, 2, 3).GetAwaiter().GetResult();
+        _sink = r?.Count ?? -1;
+    }
 
     [Benchmark]
-    public void RedBlackTree_RangeTop50() =>
+    public IReadOnlyList<RankedCustomer> RedBlackTree_RangeTop50() =>
         _redBlackTree.GetByRankRangeAsync(1, 50).GetAwaiter().GetResult();
 
     [Benchmark]
-    public void RedBlackTree_UpdateSingle() =>
+    public decimal RedBlackTree_UpdateSingle() =>
         _redBlackTree.UpdateScoreAsync(1_000_001, 1m).GetAwaiter().GetResult();
 
     [Benchmark]
-    public void RedBlackTree_Neighborhood() =>
-        _redBlackTree.GetNeighborhoodAsync(1_000_500, 2, 3).GetAwaiter().GetResult();
+    public void RedBlackTree_Neighborhood()
+    {
+        var r = _redBlackTree.GetNeighborhoodAsync(1_001_500, 2, 3).GetAwaiter().GetResult();
+        _sink = r?.Count ?? -1;
+    }
 }
 
 public static class Program
